@@ -61,13 +61,13 @@ namespace ClassicMap
 
 		public void LoadPokemonNames()
 		{
-			gb.BufferLocation = 0x41024;
+			gb.BufferLocation = 0x42800;
 			byte[] indicies = gb.ReadBytes(256);
 			PokemonIndicies = indicies;
 			string[] names = new string[256];
-			for (int i = 0; i < 191; i++)
+			for (int i = 0; i < 254; i++)
 			{
-				gb.BufferLocation = 0x1C21E + (i * 10);
+				gb.BufferLocation = 0xff000 + (i * 10);
 				byte[] nameBytes = gb.ReadBytes(10);
 				string s = "";
 				for (int k = 0; k < 10; k++)

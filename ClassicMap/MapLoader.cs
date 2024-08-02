@@ -12,6 +12,8 @@ namespace ClassicMap
 		public byte Width;
 		public byte Height;
 		public int LevelData;
+		public int TextData;
+		public int ScriptData;
 		public int EventData;
 	}
 
@@ -46,8 +48,8 @@ namespace ClassicMap
 			mapHeader.Height = gb.ReadByte();
 			mapHeader.Width = gb.ReadByte();
 			mapHeader.LevelData = bank * 0x4000 + gb.ReadByte() + ((gb.ReadByte() - 0x40) * 0x100);
-			gb.ReadWord();
-			gb.ReadWord();
+			mapHeader.TextData = bank * 0x4000 + gb.ReadByte() + ((gb.ReadByte() - 0x40) * 0x100);
+			mapHeader.ScriptData = bank * 0x4000 + gb.ReadByte() + ((gb.ReadByte() - 0x40) * 0x100);
 			LoadConnections();
 			mapHeader.EventData = bank * 0x4000 + gb.ReadByte() + ((gb.ReadByte() - 0x40) * 0x100);
 			LoadEvents();

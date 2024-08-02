@@ -47,7 +47,7 @@ namespace ClassicMap
 		public void LoadGraphics()
 		{
 			graphics = new byte[256, 8, 8];
-			gb.ReadTiles(16, 6, graphicsAddress, ref graphics);
+			gb.ReadTiles(16, 7, graphicsAddress, ref graphics);
 		}
 
 		public Bitmap LoadTileset(int tileset)

@@ -8,6 +8,7 @@ using System.Text;
 using System.IO;
 using System.Windows.Forms;
 using System.Drawing.Imaging;
+using System.Linq;
 
 namespace ClassicMap
 {
@@ -33,6 +34,8 @@ namespace ClassicMap
 
 		public static Color[] Palette = new Color[] { Color.White, Color.FromArgb(208, 208, 208), Color.FromArgb(168, 168, 168), Color.Black };
 
+		public static SGBPalette.SGBPALETTEDATA sgbpalettes;
+
 
 		//Open File Dialogs
 		private OpenFileDialog openROM;
@@ -53,6 +56,21 @@ namespace ClassicMap
 			cm2.Matrix33 = (float).6;
 			eventTTransparency = new ImageAttributes();
 			eventTTransparency.SetColorMatrix(cm2, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
+			palette_R.Value = 255;
+			palette_G.Value = 255;
+			palette_B.Value = 255;
+
+			palette2_R.Value = 208;
+			palette2_G.Value = 208;
+			palette2_B.Value = 208;
+
+			palette3_R.Value = 168;
+			palette3_G.Value = 168;
+			palette3_B.Value = 168;
+
+			palette4_R.Value = 0;
+			palette4_G.Value = 0;
+			palette4_B.Value = 0;
 		}
 
 		private void openROMToolStripMenuItem_Click(object sender, EventArgs e)
@@ -98,7 +116,12 @@ namespace ClassicMap
 			wildPokemonLoader = new WildPokemonLoader(gb);
 			spriteLoader = new SpriteLoader(gb);
 
-			cachedTilesets = new Bitmap[256];
+			int tempBufferLoc = gb.BufferLocation;
+			gb.BufferLocation = SGBPalette.SGBPaletteOffset;
+			sgbpalettes = new SGBPalette.SGBPALETTEDATA(gb.ReadBytes(SGBPalette.SGBPalettes_totalSize).ToArray());
+			gb.BufferLocation = tempBufferLoc;
+
+		cachedTilesets = new Bitmap[256];
 			wildPokemonLoader.LoadPokemonNames();
 			foreach (string name in wildPokemonLoader.PokemonNames)
 			{
@@ -150,12 +173,12 @@ namespace ClassicMap
 			}
 			Graphics g = Graphics.FromImage(b);
 			int x = 0, y = 0;
-			byte map = gb.ReadByte(0x70F11 + (int)nTownMap.Value);
+			byte map = gb.ReadByte(0x71110 + (int)nTownMap.Value); //TownMapOrder 0x70F11
 			nMap.Value = map;
 			int namePointer = 0;
 			if (map <= 0x25)
 			{
-				gb.BufferLocation = 0x71313 + map * 3;
+				gb.BufferLocation = 0x71313 + map * 3; //ExternalMapEntries
 				byte location = gb.ReadByte();
 				x = (location & 0xF) * 8 + 12;
 				y = (location >> 4) * 8 + 4;
@@ -163,7 +186,7 @@ namespace ClassicMap
 			}
 			else
 			{
-				gb.BufferLocation = 0x71382;
+				gb.BufferLocation = 0x71382; //InternalMapEntries
 				while (true)
 				{
 					if (gb.ReadByte() > map)
@@ -191,9 +214,8 @@ namespace ClassicMap
 			}
 			lblName.Text = "Map Name: " + text;
 		}
-
-		private void nMap_ValueChanged(object sender, EventArgs e)
-		{
+		private void reloadMap()
+        {
 			nTownMap_ValueChanged(nMap, null);
 			if (!LoadMap((int)nMap.Value))
 			{
@@ -203,6 +225,15 @@ namespace ClassicMap
 				lblMapHeader.Text = "";
 				this.BeginInvoke(new MethodInvoker(ShowMapError));
 			}
+		}
+		private void nMap_ValueChanged(object sender, EventArgs e)
+		{
+			if (autoLoadMapPal.Checked)
+			{
+				getMapPalette((int)nMap.Value);
+				paletteIndex.Value = sgbpalettes.CurrentPalette;
+			}
+			reloadMap();
 		}
 
 		private void ShowMapError()
@@ -226,6 +257,8 @@ namespace ClassicMap
 					"\nWidth: " + mapLoader.mapHeader.Width +
 					"\nHeight: " + mapLoader.mapHeader.Height +
 					"\nLevel Data: 0x" + mapLoader.mapHeader.LevelData.ToString("X") +
+					"\nText Data: 0x" + mapLoader.mapHeader.TextData.ToString("X") +
+					"\nScript Data: 0x" + mapLoader.mapHeader.ScriptData.ToString("X") +
 					"\nEvent Data: 0x" + mapLoader.mapHeader.EventData.ToString("X");
 				lblWildPokemon.Text = "Wild Pokemon: " + (wildPokemonLoader.rarityGrass > 0 ? "Grass" + (wildPokemonLoader.rarityWater > 0 ? "/Water" : "") : (wildPokemonLoader.rarityWater > 0 ? "Water" : "None"));
 
@@ -273,10 +306,14 @@ namespace ClassicMap
 					grpWater.Visible = false;
 				}
 
+				/* Make always reload tileset, needed to dynamically update palette
 				if (cachedTilesets[mapLoader.mapHeader.Tileset] == null)
 				{
 					cachedTilesets[mapLoader.mapHeader.Tileset] = tilesetLoader.LoadTileset(mapLoader.mapHeader.Tileset);
 				}
+				*/
+				cachedTilesets[mapLoader.mapHeader.Tileset] = tilesetLoader.LoadTileset(mapLoader.mapHeader.Tileset);
+
 				pTileset.Image = cachedTilesets[mapLoader.mapHeader.Tileset];
 				UpdateSelectedTile();
 				DrawMap();
@@ -316,6 +353,7 @@ namespace ClassicMap
 			for (int y = 0; y < 32; y++)
 				for (int x = 0; x < 32; x++)
 					b.SetPixel(x, y, cachedTilesets[mapLoader.mapHeader.Tileset].GetPixel(x, selectedTile * 32 + y));
+			lblTileblock.Text = "Tileblock: 0x" +selectedTile.ToString("X2");
 			pTile.Image = b;
 			pTileset.Invalidate();
 		}
@@ -890,7 +928,136 @@ namespace ClassicMap
 			wildPokemonLoader.rarityWater = (byte)tbWater.Value;
 		}
 
-		private void cboWaterPokemon_SelectedIndexChanged(object sender, EventArgs e)
+		private void update_palette()
+        {
+			Palette = new Color[] { Color.FromArgb((int)palette_R.Value, (int)palette_G.Value, (int)palette_B.Value), Color.FromArgb((int)palette2_R.Value, (int)palette2_G.Value, (int)palette2_B.Value), Color.FromArgb((int)palette3_R.Value, (int)palette3_G.Value, (int)palette3_B.Value), Color.FromArgb((int)palette4_R.Value, (int)palette4_G.Value, (int)palette4_B.Value) };
+			//reloadMap();
+		}
+
+        private void palette_R_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+        private void palette_G_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+        private void palette_B_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+		private void palette2_R_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+		private void palette2_G_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+		private void palette2_B_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+		private void palette3_R_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+		private void palette3_G_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+		private void palette3_B_ValueChanged(object sender, EventArgs e)
+        {
+			update_palette();
+		}
+
+		private void palette4_R_ValueChanged(object sender, EventArgs e)
+		{
+			update_palette();
+		}
+
+		private void palette4_G_ValueChanged(object sender, EventArgs e)
+		{
+			update_palette();
+		}
+
+		private void palette4_B_ValueChanged(object sender, EventArgs e)
+		{
+			update_palette();
+		}
+
+		private void getMapPalette(int map)
+		{
+			//Read palette index
+			byte mapPalIndex = gb.ReadByte(SGBPalette.mapPalettesAddr + map);
+			setPalette(mapPalIndex);
+		}
+		private void setPalette(int palette)
+		{
+			//Read the corresponding SGB palette
+			sgbpalettes.SetcurrentPalette(palette);
+
+			//Set palette color 0
+			palette_R.Value = sgbpalettes.toRGB(0).R;
+			palette_G.Value = sgbpalettes.toRGB(0).G;
+			palette_B.Value = sgbpalettes.toRGB(0).B;
+
+			//Set palette color 1
+			palette2_R.Value = sgbpalettes.toRGB(1).R;
+			palette2_G.Value = sgbpalettes.toRGB(1).G;
+			palette2_B.Value = sgbpalettes.toRGB(1).B;
+
+			//Set palette color 2
+			palette3_R.Value = sgbpalettes.toRGB(2).R;
+			palette3_G.Value = sgbpalettes.toRGB(2).G;
+			palette3_B.Value = sgbpalettes.toRGB(2).B;
+
+			//Set palette color 3
+			palette4_R.Value = sgbpalettes.toRGB(3).R;
+			palette4_G.Value = sgbpalettes.toRGB(3).G;
+			palette4_B.Value = sgbpalettes.toRGB(3).B;
+
+		}
+
+		private void palMapReload_Click(object sender, EventArgs e)
+        {
+			getMapPalette((int)nMap.Value);
+			paletteIndex.Value = sgbpalettes.CurrentPalette;
+		}
+
+        private void applyPal_Click(object sender, EventArgs e)
+        {
+			reloadMap();
+        }
+
+        private void loadIndexPal_Click(object sender, EventArgs e)
+        {
+			setPalette((int)paletteIndex.Value);
+			if (autoLoadMapPal.Checked)
+			{
+				reloadMap();
+			}
+		}
+
+        private void paletteIndex_ValueChanged(object sender, EventArgs e)
+        {
+			paletteIndexHex.Text = "0x" + ((int)paletteIndex.Value).ToString("X2");
+			if (autoLoadMapPal.Checked)
+			{
+				setPalette((int)paletteIndex.Value);
+				reloadMap();
+			}
+		}
+
+        private void cboWaterPokemon_SelectedIndexChanged(object sender, EventArgs e)
 		{
 			string s = cboWaterPokemon.SelectedItem.ToString().Substring(4) + " - " + (int)nWaterLevel.Value;
 			if ((string)lstWater.Text == s)
